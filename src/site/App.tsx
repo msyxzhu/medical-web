@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { BRAND, CATEGORIES, SOURCE_NOTE, SUPPORT_TEXT } from '../shared/content.ts'
 import type { CourseContent } from '../shared/content.ts'
 import { Brand, Button, Icon, Modal, Notice, PlantArt } from '../shared/ui.tsx'
@@ -30,6 +30,7 @@ function InfoContent({ type }: { type: InfoPage }) {
 
 export function SiteApp() {
   const [menu, setMenu] = useState(false)
+  const menuToggle = useRef<HTMLButtonElement>(null)
   const [program, setProgram] = useState<PublicProgram | null>(null)
   const [error, setError] = useState('')
   const [expanded, setExpanded] = useState(false)
@@ -45,8 +46,8 @@ export function SiteApp() {
   return <div className="site">
     <a className="skip-link" href="#site-main">跳到主要内容</a>
     <header className="site-header"><div className="site-header-inner"><a href="#top" onClick={closeMenu} aria-label={`${BRAND}首页`}><Brand /></a>
-      <button className="icon-btn site-menu-toggle" aria-label="展开导航" aria-expanded={menu} onClick={() => setMenu(!menu)}><Icon name={menu ? 'close' : 'menu'} /></button>
-      <nav className={menu ? 'site-nav is-open' : 'site-nav'} aria-label="网站导航">
+      <button ref={menuToggle} className="icon-btn site-menu-toggle" aria-label={menu ? '收起导航' : '展开导航'} aria-controls="site-nav" aria-expanded={menu} onClick={() => setMenu(!menu)} onKeyDown={event => { if (event.key === 'Escape') closeMenu() }}><Icon name={menu ? 'close' : 'menu'} /></button>
+      <nav id="site-nav" className={menu ? 'site-nav is-open' : 'site-nav'} aria-label="网站导航" onKeyDown={event => { if (menu && event.key === 'Escape') { closeMenu(); menuToggle.current?.focus() } }}>
         <a href="#about" onClick={closeMenu}>关于项目</a><a href="#program" onClick={closeMenu}>课程与练习</a><a href="#journey" onClick={closeMenu}>参与方式</a><a href="#questions" onClick={closeMenu}>常见问题</a><a href={ADMIN_PATH} className="btn btn-secondary">专业工作台 <Icon name="arrow" size={15} /></a>
       </nav>
     </div></header>

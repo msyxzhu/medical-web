@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { adminService } from './services/index.ts'
-import { useAction, useWorkspace } from './workspace.tsx'
+import { useAction, useRecordDraft, useWorkspace } from './workspace.tsx'
 import { BackLink, PageHeading, Panel, ParticipantLink, StatusTag } from './components.tsx'
 import { Button, Empty, Notice, formatDate } from '../shared/ui.tsx'
 import type { Submission } from './domain.ts'
@@ -22,17 +22,21 @@ export function Reviews() {
 function FeedbackEditor({ record, hold }: { record: Submission; hold: boolean }) {
   const { workspace } = useWorkspace()
   const action = useAction()
-  const [body, setBody] = useState(record.feedback?.body ?? '')
-  const [confirmSend, setConfirmSend] = useState(false)
+  const stamp = JSON.stringify(record.feedback)
+  const draft = useRecordDraft(record.feedback?.body ?? '', stamp)
+  const body = draft.value
+  const [confirmedStamp, setConfirmedStamp] = useState<string | null>(null)
+  const confirmSend = confirmedStamp === stamp && !draft.conflict && !hold
   const readOnly = workspace.staff.role !== 'clinician' || Boolean(record.feedback?.sentAt)
   return <Panel title="专业反馈">
     <div className="panel-body form-stack">
+      {draft.conflict && <Notice tone="warning">这条反馈已有更新，本页输入不会覆盖新记录。可先复制需要的文字，再读取最新版。{readOnly && <p className="prose">{body}</p>}<Button variant="secondary" onClick={() => { draft.discard(); setConfirmedStamp(null) }}>放弃本页修改，读取最新版</Button></Notice>}
       {readOnly ? <><div className="prose">{record.feedback?.body ?? '还没有反馈内容。请切换到负责治疗师身份后填写。'}</div><Notice>{record.feedback?.sentAt ? '反馈已经记录，原内容保留为只读记录。' : '项目管理可查看记录，但不能代替治疗师填写反馈。'}</Notice></>
-        : <><label className="field">反馈内容<textarea maxLength={2000} rows={8} value={body} onChange={event => { setBody(event.target.value); setConfirmSend(false) }} placeholder="围绕这次记录，写下观察与下一步练习提示。" /><span className="field-hint">{body.length} / 2000 字 · 请勿填写诊断、处方或紧急处置意见。</span></label>
+        : <><label className="field">反馈内容<textarea maxLength={2000} rows={8} disabled={action.busy} value={body} onChange={event => { draft.update(event.target.value); setConfirmedStamp(null) }} placeholder="围绕这次记录，写下观察与下一步练习提示。" /><span className="field-hint">{body.length} / 2000 字 · 请勿填写诊断、处方或紧急处置意见。</span></label>
           <Notice tone={hold ? 'warning' : 'info'}>{hold ? '该参与者需优先获得支持或已暂停，不能提交普通练习反馈；可保留草稿。' : '反馈只保存在当前浏览器，不会发送至微信，也不表示实际联系了参与者。'}</Notice>
           {action.error && <Notice tone="error">{action.error}</Notice>}
-          {confirmSend && <div className="confirm-inline"><p>确认保存为已反馈记录？提交后不再修改原内容。</p><div className="form-actions"><Button variant="ghost" onClick={() => setConfirmSend(false)} disabled={action.busy}>返回修改</Button><Button busy={action.busy} onClick={() => action.run(() => adminService.saveFeedback({ submissionId: record.id, body, send: true, revision: workspace.revision }), '反馈已记录，仅保存在本机。')}>确认记录反馈</Button></div></div>}
-          {!confirmSend && <div className="form-actions"><Button variant="secondary" busy={action.busy} disabled={!body.trim()} onClick={() => action.run(() => adminService.saveFeedback({ submissionId: record.id, body, send: false, revision: workspace.revision }), '反馈草稿已保存。')}>保存草稿</Button><Button disabled={!body.trim() || hold || action.busy} onClick={() => setConfirmSend(true)}>完成反馈</Button></div>}
+          {confirmSend && <div className="confirm-inline"><p>确认保存为已反馈记录？提交后不再修改原内容。</p><div className="form-actions"><Button variant="ghost" onClick={() => setConfirmedStamp(null)} disabled={action.busy}>返回修改</Button><Button busy={action.busy} onClick={async () => { if (await action.run(() => adminService.saveFeedback({ submissionId: record.id, body, send: true, revision: workspace.revision }), '反馈已记录，仅保存在本机。')) draft.discard() }}>确认记录反馈</Button></div></div>}
+          {!confirmSend && <div className="form-actions"><Button variant="secondary" busy={action.busy} disabled={!body.trim() || body.trim() === record.feedback?.body || draft.conflict} onClick={async () => { if (await action.run(() => adminService.saveFeedback({ submissionId: record.id, body, send: false, revision: workspace.revision }), '反馈草稿已保存。')) draft.discard() }}>保存草稿</Button><Button disabled={!body.trim() || hold || draft.conflict || action.busy} onClick={() => setConfirmedStamp(stamp)}>完成反馈</Button></div>}
         </>}
     </div>
   </Panel>

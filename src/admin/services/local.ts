@@ -1,4 +1,4 @@
-import { databaseSchema, STAFF, STAGE_LABELS, staffIdSchema, statusOf } from '../domain.ts'
+import { databaseSchema, sameCourseCopy, STAFF, STAGE_LABELS, staffIdSchema, statusOf } from '../domain.ts'
 import type { Database, Participant, Staff } from '../domain.ts'
 import type { AdminService, LocalWorkspaceTools, StoragePort } from './contracts.ts'
 import { createSeed } from './seed.ts'
@@ -170,11 +170,13 @@ export function createLocalWorkspace(storage: StoragePort, clock = () => new Dat
       change(input.revision, (db, staff) => {
         manager(staff)
         const lesson = lessonFor(db, input.lessonId)
-        lesson.draft = {
+        const draft = {
           title: required(input.copy.title, '课程名称', 60),
           goal: required(input.copy.goal, '课程目标', 200),
           body: required(input.copy.body, '课程内容', 12000),
         }
+        if (sameCourseCopy(draft, lesson.draft)) throw new AppError('NO_CHANGES', '课程内容没有变化，现有审核或发布状态已保留。')
+        lesson.draft = draft
         lesson.stage = 'draft'
         lesson.editedBy = staff.id
         lesson.reviewedBy = null

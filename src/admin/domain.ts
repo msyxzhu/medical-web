@@ -48,6 +48,9 @@ export const supportCaseSchema = z.object({
 export type SupportCase = z.infer<typeof supportCaseSchema>
 const copySchema = z.object({ title: z.string(), goal: z.string(), body: z.string() })
 export type ContentCopy = z.infer<typeof copySchema>
+export function sameCourseCopy(a: ContentCopy, b: ContentCopy) {
+  return a.title.trim() === b.title.trim() && a.goal.trim() === b.goal.trim() && a.body.trim() === b.body.trim()
+}
 export const lessonSchema = z.object({
   id: z.string(), order: z.number().int(), draft: copySchema, published: copySchema.nullable(),
   stage: z.enum(['draft', 'reviewing', 'approved', 'published']), version: z.number().int().min(0),

@@ -17,6 +17,19 @@ export function useWorkspace() {
   if (!context) throw new Error('Workspace provider is missing')
   return context
 }
+
+// Keep only local edits in state. An untouched editor follows the saved record on refresh.
+export function useRecordDraft<T>(saved: T, recordStamp: string) {
+  const [edit, setEdit] = useState<{ stamp: string; value: T } | null>(null)
+  return {
+    value: edit ? edit.value : saved,
+    conflict: edit !== null && edit.stamp !== recordStamp && JSON.stringify(edit.value) !== JSON.stringify(saved),
+    update(value: T) {
+      setEdit(previous => JSON.stringify(value) === JSON.stringify(saved) ? null : { stamp: previous?.stamp ?? recordStamp, value })
+    },
+    discard() { setEdit(null) },
+  }
+}
 export function useAction() {
   const { reload, notify } = useWorkspace()
   const [busy, setBusy] = useState(false)

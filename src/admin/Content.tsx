@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { CONTENT_LABELS, staffName } from './domain.ts'
+import { CONTENT_LABELS, sameCourseCopy, staffName } from './domain.ts'
 import type { ManagedLesson } from './domain.ts'
 import { adminService } from './services/index.ts'
-import { useAction, useWorkspace } from './workspace.tsx'
+import { useAction, useRecordDraft, useWorkspace } from './workspace.tsx'
 import { BackLink, PageHeading, Panel } from './components.tsx'
 import { Button, Empty, Icon, Modal, Notice, formatDate } from '../shared/ui.tsx'
 
@@ -23,23 +23,26 @@ export function ContentList() {
 function LessonEditor({ lesson }: { lesson: ManagedLesson }) {
   const { workspace } = useWorkspace()
   const action = useAction()
-  const [copy, setCopy] = useState(lesson.draft)
+  const draft = useRecordDraft(lesson.draft, JSON.stringify(lesson))
+  const { value: copy, update: setCopy } = draft
   const [note, setNote] = useState('')
   const [review, setReview] = useState<'approve' | 'return' | null>(null)
   const [publishing, setPublishing] = useState(false)
   const editing = workspace.staff.role === 'manager'
-  const dirty = JSON.stringify(copy) !== JSON.stringify(lesson.draft)
+  const dirty = !sameCourseCopy(copy, lesson.draft)
+  const canSave = editing && dirty && !action.busy && !draft.conflict && Boolean(copy.title.trim() && copy.goal.trim() && copy.body.trim())
   return <>
     <BackLink to="/content">课程内容</BackLink>
     <PageHeading eyebrow={`LESSON ${String(lesson.order).padStart(2, '0')}`} title={lesson.draft.title} description="草稿 → 专业审核 → 管理发布。发布仅记录本机版本，不同步官网或微信。">
       <span className="tag">{CONTENT_LABELS[lesson.stage]}</span>
     </PageHeading>
-    <div className="detail-grid content-editor"><Panel title={editing ? '编辑课程草稿' : '待审核的课程内容'}><form className="panel-body form-stack" onSubmit={event => { event.preventDefault(); void action.run(() => adminService.saveContent({ lessonId: lesson.id, copy, revision: workspace.revision }), '课程草稿已保存，已发布版本保持不变。') }}>
+    <div className="detail-grid content-editor"><Panel title={editing ? '编辑课程草稿' : '课程内容'}><form className="panel-body form-stack" onSubmit={async event => { event.preventDefault(); if (canSave && await action.run(() => adminService.saveContent({ lessonId: lesson.id, copy, revision: workspace.revision }), '课程草稿已保存，已发布版本保持不变。')) draft.discard() }}>
       {editing ? <>
-        <label className="field">课程名称<input maxLength={60} required value={copy.title} onChange={event => setCopy({ ...copy, title: event.target.value })} /></label>
-        <label className="field">课程目标<input maxLength={200} required value={copy.goal} onChange={event => setCopy({ ...copy, goal: event.target.value })} /></label>
-        <label className="field">图文内容<textarea rows={16} required maxLength={12000} value={copy.body} onChange={event => setCopy({ ...copy, body: event.target.value })} placeholder="请按已提供、经允许使用的资料整理课程内容。" /><span className="field-hint">当前采用纯文本分段，不支持上传视频或富文本嵌入。</span></label>
-        <div className="form-actions"><span className="muted small">{dirty ? '有未保存的修改' : '与已保存草稿一致'}</span><Button type="submit" busy={action.busy} disabled={!dirty || !copy.body.trim()}>保存草稿</Button></div>
+        <label className="field">课程名称<input maxLength={60} required disabled={action.busy} value={copy.title} onChange={event => setCopy({ ...copy, title: event.target.value })} /></label>
+        <label className="field">课程目标<input maxLength={200} required disabled={action.busy} value={copy.goal} onChange={event => setCopy({ ...copy, goal: event.target.value })} /></label>
+        <label className="field">图文内容<textarea rows={16} required maxLength={12000} disabled={action.busy} value={copy.body} onChange={event => setCopy({ ...copy, body: event.target.value })} placeholder="请按已提供、经允许使用的资料整理课程内容。" /><span className="field-hint">当前采用纯文本分段，不支持上传视频或富文本嵌入。</span></label>
+        {draft.conflict && <Notice tone="warning">这节课已有更新。为避免覆盖，已保留本页输入；可先复制需要的文字，再读取最新版。<Button variant="secondary" onClick={draft.discard}>放弃本页修改，读取最新版</Button></Notice>}
+        <div className="form-actions"><span className="muted small">{dirty ? '有未保存的修改' : '与已保存草稿一致'}</span><Button type="submit" busy={action.busy} disabled={!canSave}>保存草稿</Button></div>
       </> : <><h3>{lesson.draft.goal}</h3><div className="prose">{lesson.draft.body || '内容尚未整理。'}</div></>}
       {action.error && <Notice tone="error">{action.error}</Notice>}
     </form></Panel>
@@ -47,10 +50,10 @@ function LessonEditor({ lesson }: { lesson: ManagedLesson }) {
         <ol className="flow-steps"><li className={lesson.stage === 'draft' ? 'current' : ''}><span>1</span>整理课程草稿</li><li className={['reviewing', 'approved'].includes(lesson.stage) ? 'current' : ''}><span>2</span>治疗师审核</li><li className={lesson.stage === 'published' ? 'current' : ''}><span>3</span>发布可回溯版本</li></ol>
         <p className="muted small">审核人：{staffName(lesson.reviewedBy)}<br />已发布：{lesson.version ? `v${lesson.version}` : '尚无版本'}</p>
         {lesson.reviewNote && <div className="review-note"><strong>审核意见</strong><p>{lesson.reviewNote}</p></div>}
-        {editing && lesson.stage === 'draft' && <Button variant="secondary" disabled={dirty || !lesson.draft.body.trim() || action.busy} onClick={() => action.run(() => adminService.submitContent(lesson.id, workspace.revision), '已提交课程审核，请切换治疗师身份审核。')}>提交审核</Button>}
+        {editing && lesson.stage === 'draft' && <Button variant="secondary" disabled={dirty || draft.conflict || !lesson.draft.body.trim() || action.busy} onClick={() => action.run(() => adminService.submitContent(lesson.id, workspace.revision), '已提交课程审核，请切换治疗师身份审核。')}>提交审核</Button>}
         {editing && dirty && <p className="field-hint">请先保存修改，再提交审核。</p>}
         {!editing && lesson.stage === 'reviewing' && <><Button onClick={() => setReview('approve')}>审核通过</Button><Button variant="secondary" onClick={() => setReview('return')}>退回修改</Button></>}
-        {editing && lesson.stage === 'approved' && <Button disabled={dirty} onClick={() => setPublishing(true)}>发布新版本</Button>}
+        {editing && lesson.stage === 'approved' && <Button disabled={dirty || draft.conflict} onClick={() => setPublishing(true)}>发布新版本</Button>}
         {lesson.stage === 'reviewing' && editing && <Notice>等待治疗师核对。编辑者不能自行审核发布。</Notice>}
       </div></Panel><Notice>本机内容版本仅用于流程评审。正式发布前，还需核对授权、专业审核和服务准入。</Notice></div>
     </div>

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { HashRouter, Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { STAFF } from './domain.ts'
 import type { StaffId, Workspace } from './domain.ts'
-import { adminService, localTools } from './services/index.ts'
+import { adminService, localTools, watchWorkspaceStorage } from './services/index.ts'
 import { errorMessage, WorkspaceContext } from './workspace.tsx'
 import { Overview } from './Overview.tsx'
 import { ParticipantDetail, Participants } from './Participants.tsx'
@@ -87,6 +87,7 @@ export function AdminApp() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const activeId = workspace?.staff.id
   const reload = useCallback(async () => {
     const session = await adminService.getSession()
     const next = session ? await adminService.getWorkspace() : null
@@ -98,9 +99,24 @@ export function AdminApp() {
     reload().catch(problem => { if (active) setError(errorMessage(problem)) }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [reload])
+  useEffect(() => {
+    let read = 0
+    const unsubscribe = watchWorkspaceStorage(async () => {
+      const current = ++read
+      try {
+        const session = await adminService.getSession()
+        if (current !== read || session?.id === activeId) return
+        const next = session ? await adminService.getWorkspace() : null
+        if (current === read) { setWorkspace(next); setError(''); setNotice('工作身份已与其他标签页同步。') }
+      } catch (problem) {
+        if (current === read) { setWorkspace(null); setNotice(''); setError(errorMessage(problem)) }
+      }
+    })
+    return () => { read++; unsubscribe() }
+  }, [activeId])
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(''), 5500); return () => clearTimeout(timer) }, [notice])
   if (loading) return <div className="fatal"><Notice>正在读取工作区…</Notice></div>
-  return <HashRouter>{workspace ? <Shell workspace={workspace} reload={reload} notify={setNotice} /> : <><Navigate to="/" replace /><Login reload={reload} error={error} /></>}
+  return <HashRouter>{workspace ? <Shell key={workspace.staff.id} workspace={workspace} reload={reload} notify={setNotice} /> : <><Navigate to="/" replace /><Login reload={reload} error={error} /></>}
     {notice && <div className="toast"><Icon name="check" size={18} /><span role="status">{notice}</span><button aria-label="关闭提示" onClick={() => setNotice('')}><Icon name="close" size={15} /></button></div>}
   </HashRouter>
 }

@@ -104,6 +104,29 @@ test('conflicts and storage failures do not report success or partially mutate d
   assert.equal(storage.getItem(STORAGE_KEY), saved)
 })
 
+test('saving an unchanged course cannot turn a reviewed or published version back into a draft', async () => {
+  const { service, storage } = await setup()
+  async function checkUnchanged() {
+    const workspace = await service.getWorkspace()
+    const lesson = workspace.lessons[0]
+    const before = storage.getItem(STORAGE_KEY)
+    await assert.rejects(service.saveContent({
+      lessonId: lesson.id, copy: { ...lesson.draft, goal: ` ${lesson.draft.goal} ` }, revision: workspace.revision,
+    }), isCode('NO_CHANGES'))
+    assert.equal(storage.getItem(STORAGE_KEY), before)
+    return workspace
+  }
+  const w = await checkUnchanged()
+  const lesson = w.lessons[0]
+  await service.saveContent({ lessonId: lesson.id, copy: { ...lesson.draft, body: '待审核的新文本' }, revision: w.revision })
+  await service.submitContent(lesson.id, (await service.getWorkspace()).revision)
+  await checkUnchanged()
+  await service.signIn('clinician-a')
+  await service.reviewContent({ lessonId: lesson.id, approve: true, note: '已核对。', revision: (await service.getWorkspace()).revision })
+  await service.signIn('manager')
+  await checkUnchanged()
+})
+
 test('explicit reset recovers malformed state without clearing unrelated keys', async () => {
   const { service, storage, tools } = await setup()
   storage.setItem('other', 'retained')
